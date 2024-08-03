@@ -1,0 +1,190 @@
+---
+title: "STA-6543_Final_Project"
+author: "William Hyltin ror910, Tim Harrison, Holly Milazzo"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+pacman::p_load(tidyverse, here, AppliedPredictiveModeling, caret, skimr, corrplot, patchwork, mlbench)
+
+trainRaw <- read_csv(here('train.csv'))
+testRaw <- read_csv(here('test.csv'))
+```
+
+## Data Cleaning and Observations
+
+```{r}
+head(trainRaw)
+skim(trainRaw)
+```
+\
+    Missing values in `LotFrontage`, `MasVnrArea`, `GarageYrBlt`, `Alley`, `MasVnrType`, `BsmtQual`, `BsmtCond`, `BsmtExposure`, `BsmtFinType1`, `BsmtFinType2`, `Electrical`, `FireplaceQu`, `GarageType`, `GarageFinish`, `GarageQual`, `GarageCond`, `PoolQC`, `Fence`, and `MiscFeature`. Some of these missing values may actually be informative, for example several missing values have to do with a basement, so a missing value there may just mean there is no basement in that home. As such we may be able to use logic to impute rather than statistical methods.  
+`MSSubClass` also comes in as a numeric variable but appears to be a code for a categorical/factor variable. Some other variables are numeric for 1-10 scores, meaning they may be better suited as ordinal categorical variables, but considering the number of other ordinal categorical variable we may only need to address this if it causes any issues.  
+Note that our test data set does not have the actual sale price of the houses, so post-resample methods will be unavailable.  
+
+```{r}
+# Addressing MSSubClass
+train1 <- trainRaw %>% mutate(
+  MSSubClass = as.character(MSSubClass)
+)
+test1 <- testRaw %>% mutate(
+  MSSubClass = as.character(MSSubClass)
+)
+```
+
+```{r}
+train1 %>% filter(is.na(GarageYrBlt),is.na(GarageType)) %>% select(GarageType) %>% nrow()
+```
+```{r}
+rbind(train1 %>% filter(!is.na(BsmtQual),is.na(BsmtFinType2)),
+train1 %>% filter(!is.na(BsmtQual),is.na(BsmtExposure)))
+```
+```{r}
+train1 %>% filter(is.na(LotFrontage)) %>% group_by(LotConfig) %>% summarize(
+  cnt = n()
+)
+```
+```{r}
+train1 %>% 
+  #filter(is.na(MasVnrArea)) %>%
+  #filter(MasVnrType == 'None') %>%
+  group_by(MasVnrType) %>% 
+  summarize(
+    cnt = n()
+    #areaMin = min(MasVnrArea), areaMax = max(MasVnrArea)
+)
+```
+
+\
+Two records have missing values for some of the basement quality variables where they don't necessarily make sense. The rest of the missing basement variables occur due to there not being a basement. In this case we can still treat these out of place missing variables the same way we do the others, since it is only two records it is unlikely to have a large impact on our models.
+
+```{r}
+train2 <- train1 %>% mutate_at(
+  c('GarageType', 'GarageFinish', 'GarageQual', 'GarageQual', 'GarageCond', 
+    'Alley', 'BsmtQual', 'BsmtCond', 'BsmtExposure', 'BsmtFinType1', 
+    'BsmtFinType2', 'FireplaceQu', 'PoolQC', 'Fence', 'MiscFeature'),
+  ~replace(., is.na(.), 'None')
+  )
+test2 <- test1 %>% mutate_at(
+  c('GarageType', 'GarageFinish', 'GarageQual', 'GarageQual', 'GarageCond', 
+    'Alley', 'BsmtQual', 'BsmtCond', 'BsmtExposure', 'BsmtFinType1', 
+    'BsmtFinType2', 'FireplaceQu', 'PoolQC', 'Fence', 'MiscFeature'),
+  ~replace(., is.na(.), 'None')
+  )
+```
+\
+We can't really impute the `GarageYrBlt` logically, i.e. we can't state a year that the garage was built if it doesn't exist, but depending on model performance/ results we may be able to impute that value statistically (mean, median, mode, knn). It would not represent a true year but more a placeholder to represent similar levels of quality across homes.   
+`LotFrontage` still has missing values, but looking at `LotConfig` suggests these do not appear to intentionally missing. There are records with missing values for `LotFrontage` despite the fact that `LotConfig` states there are two sides with Lot Frontage. The records where `LotConfig` is equal to 'Inside' may indicate there is not Frontage, however the records on the other values are enough to cause some uncertainty. Therefore, it makes the most sense to impute this record as well.  
+For the two Masonry variables `MasVnrType` and `MasVnrArea`, these are really the only two variables that directly inform each other, so we don't have a way to reasonably impute these two logically. That in mind, there is a value that `MasVnrType` can take for when there is no Masonry Veneer, and in those instances `MasVnrArea` is *usually* 0. Also worth noting that in the instances when the Masonry Variables are missing the `LotConfig` is *usually* 'Inside', which may suggest that properties with an inside lot don't have any Masonry Veneer. Therefore it would make some sense to impute `MasVnrType` and `MasVnrArea` as 'None' and 0 respectively, but again there is enough uncertainty and few enough variables I think statistical imputation methods should be considered first.  
+
+```{r}
+train2 %>% skim()
+```
+\
+Our data should be relatively clean now, and any further imputations can occur within the respective models that we fit.
+
+## Exploratory Analysis
+
+  Depending on the model that we fit we may have to contend with things like skewness, multicollinearity, near zero variance, and centered and scaling. 
+
+```{r}
+trainCorr <- train2 %>% 
+  select(-SalePrice) %>% 
+  select_if(is.numeric) %>%  
+  na.omit() %>% 
+  cor()
+
+names(train2[findCorrelation(trainCorr, cutoff = 0.7)])
+
+trainCorr %>% corrplot(order = 'original', type = 'lower', tl.srt = 45, tl.cex = 0.7)
+```
+\
+A few variables have relatively high correlation, but for the most most part the variables are pretty independent.
+
+```{r}
+charPlots <- lapply(colnames(select_if(train2, is.character)),
+       function(col) {
+        ggplot(select_if(train2, is.character),
+                aes(.data[[col]])) + geom_bar() +
+           coord_flip() + ggtitle(col)
+       }
+)
+
+charPlots[[1]] + charPlots[[2]] + charPlots[[3]] + charPlots[[4]] + charPlots[[5]] + charPlots[[6]] +
+charPlots[[7]] + charPlots[[8]] + charPlots[[9]] + charPlots[[10]] + charPlots[[11]] + charPlots[[12]]
+charPlots[[13]] + charPlots[[14]] + charPlots[[15]] + charPlots[[16]] + charPlots[[17]] + charPlots[[18]]
+charPlots[[19]] + charPlots[[20]] + charPlots[[21]] + charPlots[[22]] + charPlots[[23]] + charPlots[[24]]
+charPlots[[25]] + charPlots[[26]] + charPlots[[27]] + charPlots[[28]] + charPlots[[29]] + charPlots[[30]]
+charPlots[[31]] + charPlots[[32]] + charPlots[[33]] + charPlots[[34]] + charPlots[[35]] + charPlots[[36]]
+charPlots[[37]] + charPlots[[38]] + charPlots[[39]] + charPlots[[40]] + charPlots[[41]] + charPlots[[42]]
+charPlots[[43]] + charPlots[[44]]
+
+names(train2[nearZeroVar(train2)]) %>% as.data.frame()
+```
+We definitely have some variables with Near Zero Variance, so models sensitive to these sorts of variables should have that included in their pre-processing.
+
+```{r, warning=FALSE}
+numPlots <- lapply(colnames(select_if(train2, is.numeric)),
+       function(col) {
+        ggplot(select_if(train2, is.numeric),
+                aes(.data[[col]])) + geom_histogram(bins=30) +
+           ggtitle(col)
+       }
+)
+
+numPlots[[1]] + numPlots[[2]] + numPlots[[3]] + numPlots[[4]] + numPlots[[5]] + numPlots[[6]]
+numPlots[[7]] + numPlots[[8]] + numPlots[[9]] + numPlots[[10]] + numPlots[[11]] + numPlots[[12]]
+numPlots[[13]] + numPlots[[14]] + numPlots[[15]] + numPlots[[16]] + numPlots[[17]] + numPlots[[18]]
+numPlots[[19]] + numPlots[[20]] + numPlots[[21]] + numPlots[[22]] + numPlots[[23]] + numPlots[[24]]
+numPlots[[25]] + numPlots[[26]] + numPlots[[27]] + numPlots[[28]] + numPlots[[29]] + numPlots[[30]]
+numPlots[[31]] + numPlots[[32]] + numPlots[[33]] + numPlots[[34]] + numPlots[[35]] + numPlots[[36]]
+numPlots[[37]]
+```
+\
+There is definitely some skewness across several of the numeric predictors, so BoxCox transformations will likely be useful for models sensitive to skewness.
+
+### Dummy Variables
+```{r}
+SalesPriceTrain <- train2[which(colnames(train2) == 'SalePrice')][[1]]
+train2 <- train2[-which(colnames(train2) == 'SalePrice')]
+
+train3 <- train2[-nearZeroVar(na.omit(train2))]
+train4 <- predict(dummyVars(~., data = train3), train3) %>% as.data.frame()
+
+test4 <- predict(dummyVars(~., data = train3), test2) %>% as.data.frame()
+```
+
+```{r}
+set.seed(42)
+indx <- createFolds(SalesPriceTrain, returnTrain = TRUE)
+ctrl <- trainControl(method = "cv", index = indx)
+```
+
+
+#### OLS
+
+```{r}
+set.seed(42)
+ols1 <- train(x = train4, y = SalesPriceTrain,
+              na.Remove = TRUE,
+              preProcess = c('center','scale', 'BoxCox'),
+              method = 'lm',
+              trControl = ctrl)
+ols1
+plot(residuals(ols1))
+```
+
+#### PLS
+```{r}
+set.seed(42)
+pls1 <- train(x = train4, y = SalesPriceTrain,
+              #na.Remove = TRUE,
+              preProcess = c('center','scale'),
+              tuneGrid = expand.grid(ncomp = 1:30),
+              method = 'pls',
+              trControl = ctrl)
+pls1
+plot(pls1)
+```
+
