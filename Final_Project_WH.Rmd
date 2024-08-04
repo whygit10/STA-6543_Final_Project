@@ -150,9 +150,23 @@ SalesPriceTrain <- train2[which(colnames(train2) == 'SalePrice')][[1]]
 train2 <- train2[-which(colnames(train2) == 'SalePrice')]
 
 train3 <- train2[-nearZeroVar(na.omit(train2))]
-train4 <- predict(dummyVars(~., data = train3), train3) %>% as.data.frame()
+test3 <- test2[-nearZeroVar(na.omit(train2))]
 
-test4 <- predict(dummyVars(~., data = train3), test2) %>% as.data.frame()
+train3 <- train3 %>% mutate(
+  isTrain = 1
+)
+test3 <- test3 %>% mutate(
+  isTrain = 0
+)
+
+dummyset <- rbind(train3, test3)
+dummyfier <- dummyVars(~., dummyset)
+dummywhole <- predict(dummyfier, dummyset) %>% as.data.frame()
+
+train4 <- dummywhole %>% filter(isTrain == 1) %>% select(-isTrain)
+test4 <- dummywhole %>% filter(isTrain == 0) %>% select(-isTrain)
+#train4 <- predict(dummyfier, train3) %>% as.data.frame()
+#test4 <- predict(dummyfier, test3) %>% as.data.frame()
 ```
 
 ```{r}
@@ -173,6 +187,10 @@ ols1 <- train(x = train4, y = SalesPriceTrain,
               trControl = ctrl)
 ols1
 plot(residuals(ols1))
+
+testpreds = data.frame(
+  ols = predict(ols1, test4)
+)
 ```
 
 #### PLS
@@ -186,5 +204,61 @@ pls1 <- train(x = train4, y = SalesPriceTrain,
               trControl = ctrl)
 pls1
 plot(pls1)
+
+testpreds$pls <- predict(pls1, test4)
+```
+
+```{r}
+set.seed(42)
+enet1 <- train(x = train4, y = SalesPriceTrain,
+              #na.Remove = TRUE,
+              preProcess = c('center','scale', 'nzv', 'knnImpute'),
+              tuneGrid = expand.grid(lambda = c(seq(0,1, by = 0.05)), 
+                        fraction = seq(0.05, 1, length = 20)),
+              method = 'enet',
+              trControl = ctrl)
+enet1
+plot(enet1)
+
+testpreds$enet <- predict(enet1, test4)
+```
+
+```{r}
+set.seed(42)
+pcr1 <- train(x = train4, y = SalesPriceTrain,
+              #na.Remove = TRUE,
+              preProcess = c('center','scale'),
+              tuneGrid = expand.grid(ncomp = 1:100),
+              method = 'pcr',
+              trControl = ctrl)
+pcr1
+plot(pcr1)
+
+testpreds$pcr <- predict(pcr1, test4)
+```
+
+```{r}
+set.seed(42)
+ridge1 <- train(x = train4, y = SalesPriceTrain,
+                   #na.Remove = TRUE,
+                   preProcess = c('center','scale', 'knnImpute', 'zv', 'nzv'),
+                   method = "ridge",
+                   tuneGrid = expand.grid(lambda = seq(0,1, by = 0.05)),
+                   trControl = ctrl
+)
+ridge1
+plot(ridge1)
+
+testpreds$ridge <-  predict(ridge1, test4)
+```
+
+```{r}
+trainPerfs <- rbind(getTrainPerf(ols1),
+                    getTrainPerf(pcr1),
+                    getTrainPerf(pls1),
+                    getTrainPerf(ridge1),
+                    getTrainPerf(enet1))
+
+trainPerfs
 ```
 
