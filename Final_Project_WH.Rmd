@@ -146,31 +146,52 @@ There is definitely some skewness across several of the numeric predictors, so B
 
 ### Dummy Variables
 ```{r}
-SalesPriceTrain <- train2[which(colnames(train2) == 'SalePrice')][[1]]
+#SalesPriceTrain <- train2[which(colnames(train2) == 'SalePrice')][[1]]
+#train2 <- train2[-which(colnames(train2) == 'SalePrice')]
+#
+#train3 <- train2[-nearZeroVar(na.omit(train2))]
+#test3 <- test2[-nearZeroVar(na.omit(train2))]
+#
+#train3 <- train3 %>% mutate(
+#  isTrain = 1
+#)
+#test3 <- test3 %>% mutate(
+#  isTrain = 0
+#)
+#
+#dummyset <- rbind(train3, test3)
+#dummyfier <- dummyVars(~., dummyset)
+#dummywhole <- predict(dummyfier, dummyset) %>% as.data.frame()
+#
+#train4 <- dummywhole %>% filter(isTrain == 1) %>% select(-isTrain)
+#test4 <- dummywhole %>% filter(isTrain == 0) %>% select(-isTrain)
+##train4 <- predict(dummyfier, train3) %>% as.data.frame()
+##test4 <- predict(dummyfier, test3) %>% as.data.frame()
+```
+
+```{r}
+SalesPrice <- train2[which(colnames(train2) == 'SalePrice')][[1]]
 train2 <- train2[-which(colnames(train2) == 'SalePrice')]
 
 train3 <- train2[-nearZeroVar(na.omit(train2))]
-test3 <- test2[-nearZeroVar(na.omit(train2))]
 
-train3 <- train3 %>% mutate(
-  isTrain = 1
-)
-test3 <- test3 %>% mutate(
-  isTrain = 0
-)
 
-dummyset <- rbind(train3, test3)
-dummyfier <- dummyVars(~., dummyset)
-dummywhole <- predict(dummyfier, dummyset) %>% as.data.frame()
+dummyfier <- dummyVars(~., train3)
+dummywhole <- predict(dummyfier, train3) %>% as.data.frame()
 
-train4 <- dummywhole %>% filter(isTrain == 1) %>% select(-isTrain)
-test4 <- dummywhole %>% filter(isTrain == 0) %>% select(-isTrain)
+set.seed(100)
+isTrain <- createDataPartition(SalesPrice, p = 0.8)[[1]]
+
+train4 <- dummywhole[isTrain,]
+test4 <- dummywhole[-isTrain,]
+SalesPriceTrain <- SalesPrice[isTrain]
+SalesPriceTest <- SalesPrice[-isTrain]
 #train4 <- predict(dummyfier, train3) %>% as.data.frame()
 #test4 <- predict(dummyfier, test3) %>% as.data.frame()
 ```
 
 ```{r}
-set.seed(42)
+set.seed(100)
 indx <- createFolds(SalesPriceTrain, returnTrain = TRUE)
 ctrl <- trainControl(method = "cv", index = indx)
 ```
@@ -179,27 +200,28 @@ ctrl <- trainControl(method = "cv", index = indx)
 #### OLS
 
 ```{r}
-set.seed(42)
+set.seed(100)
 ols1 <- train(x = train4, y = SalesPriceTrain,
-              na.Remove = TRUE,
-              preProcess = c('center','scale', 'BoxCox'),
+              #na.Remove = TRUE,
+              preProcess = c('center','scale', 'BoxCox', 'knnImpute'),
               method = 'lm',
               trControl = ctrl)
 ols1
 plot(residuals(ols1))
 
 testpreds = data.frame(
+  obs = SalesPriceTest,
   ols = predict(ols1, test4)
 )
 ```
 
 #### PLS
 ```{r}
-set.seed(42)
+set.seed(100)
 pls1 <- train(x = train4, y = SalesPriceTrain,
               #na.Remove = TRUE,
-              preProcess = c('center','scale'),
-              tuneGrid = expand.grid(ncomp = 1:30),
+              preProcess = c('center', 'scale', 'knnImpute'),
+              tuneGrid = expand.grid(ncomp = 1:50),
               method = 'pls',
               trControl = ctrl)
 pls1
@@ -209,7 +231,7 @@ testpreds$pls <- predict(pls1, test4)
 ```
 
 ```{r}
-set.seed(42)
+set.seed(100)
 enet1 <- train(x = train4, y = SalesPriceTrain,
               #na.Remove = TRUE,
               preProcess = c('center','scale', 'nzv', 'knnImpute'),
@@ -224,11 +246,11 @@ testpreds$enet <- predict(enet1, test4)
 ```
 
 ```{r}
-set.seed(42)
+set.seed(100)
 pcr1 <- train(x = train4, y = SalesPriceTrain,
               #na.Remove = TRUE,
-              preProcess = c('center','scale'),
-              tuneGrid = expand.grid(ncomp = 1:100),
+              preProcess = c('center','scale', 'knnImpute'),
+              tuneGrid = expand.grid(ncomp = 1:190),
               method = 'pcr',
               trControl = ctrl)
 pcr1
@@ -238,7 +260,7 @@ testpreds$pcr <- predict(pcr1, test4)
 ```
 
 ```{r}
-set.seed(42)
+set.seed(100)
 ridge1 <- train(x = train4, y = SalesPriceTrain,
                    #na.Remove = TRUE,
                    preProcess = c('center','scale', 'knnImpute', 'zv', 'nzv'),
@@ -260,5 +282,98 @@ trainPerfs <- rbind(getTrainPerf(ols1),
                     getTrainPerf(enet1))
 
 trainPerfs
+```
+
+```{r}
+testPerfs <- rbind(OLS = postResample(testpreds$ols, testpreds$obs),
+                   PCR = postResample(testpreds$pcr, testpreds$obs),
+                   PLS = postResample(testpreds$pls, testpreds$obs),
+                   Ridge = postResample(testpreds$ridge, testpreds$obs),
+                   ENET = postResample(testpreds$enet, testpreds$obs))
+
+testPerfs
+```
+
+```{r}
+set.seed(100)  
+svmr1 <- train(x = train4, y = SalesPriceTrain,
+                   method = "svmRadial",
+                   preProcess = c("center", "scale", 'BoxCox', 'knnImpute', 'zv', 'nzv'),
+                   tuneLength = 10,
+                   trControl = ctrl)
+svmr1
+
+plot(svmr1)
+
+testpreds$SVMr <-  predict(svmr1, test4)
+```
+
+```{r}
+set.seed(100)  
+mars1 <- train(x = train4, y = SalesPriceTrain, 
+                    method = "earth",
+                    preProcess = c("center", "scale", 'BoxCox', 'knnImpute'),
+                    tuneGrid = expand.grid(degree = 1, nprune = 2:28),
+                    trControl = ctrl)
+mars1
+
+marsImp <- varImp(mars1, scale = FALSE)
+
+plot(mars1)
+plot(marsImp, top = 25)
+
+testpreds$MARS <-  predict(mars1, test4)
+```
+
+```{r}
+set.seed(100)  
+nnetGrid <- expand.grid(size = c(1, 3), decay = c(0, 0.01, 0.1))
+
+nnet1 <- train(x = train4, y = SalesPriceTrain,  
+                    method = "nnet",
+                    na.Remove = TRUE,
+                    trControl = ctrl,
+                    preProc = c("center", "scale", 'knnImpute'),
+                    tuneGrid = nnetGrid,
+                    linout = TRUE,
+                    trace = FALSE,
+                    maxit = 2000,
+                    allowParallel = FALSE)
+nnet1
+
+plot(nnet1)
+
+testpreds$NNET <-  predict(nnet1, test4)
+```
+
+```{r}
+set.seed(100)
+mtryGrid <- data.frame(mtry = floor(seq(10,ncol(train4), length = 10)))
+
+rf1 <- train(x = train4, y = SalesPriceTrain,  
+                    method = "rf",
+                    preProc = c('knnImpute', 'zv', 'nzv'),
+                    tuneGrid = mtryGrid,
+                    ntree = 200,
+                    importance = TRUE,
+                    trControl = ctrl)
+rf1
+rfImp <- varImp(rf1, scale = FALSE)
+
+plot(rf1)
+plot(rfImp, top = 25)
+
+testpreds$RF <-  predict(rf1, test4)
+```
+
+
+```{r}
+testPerfs2 <- rbind(testPerfs,
+                   SVMr = postResample(testpreds$SVMr, testpreds$obs),
+                   MARS = postResample(testpreds$MARS, testpreds$obs),
+                   NNET = postResample(testpreds$NNET, testpreds$obs),
+                   RF = postResample(testpreds$RF, testpreds$obs))
+
+testPerfs2
 ```
 
