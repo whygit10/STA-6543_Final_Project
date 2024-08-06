@@ -57,19 +57,21 @@ train1 %>%
 ```
 
 \
-Two records have missing values for some of the basement quality variables where they don't necessarily make sense. The rest of the missing basement variables occur due to there not being a basement. In this case we can still treat these out of place missing variables the same way we do the others, since it is only two records it is unlikely to have a large impact on our models.
+Two records have missing values for some of the basement quality variables where they don't necessarily make sense. The rest of the missing basement variables occur due to there not being a basement. In this case we can still treat these out of place missing variables the same way we do the others, since it is only two records it is unlikely to have a large impact on our models. The same can be said of two other variables, `Electrical` and `MasVnrType`, which have only a small handful of missing values, so would be unlikely to impact a model.
 
 ```{r}
 train2 <- train1 %>% mutate_at(
   c('GarageType', 'GarageFinish', 'GarageQual', 'GarageQual', 'GarageCond', 
     'Alley', 'BsmtQual', 'BsmtCond', 'BsmtExposure', 'BsmtFinType1', 
-    'BsmtFinType2', 'FireplaceQu', 'PoolQC', 'Fence', 'MiscFeature'),
+    'BsmtFinType2', 'FireplaceQu', 'PoolQC', 'Fence', 'MiscFeature', 
+    'Electrical', 'MasVnrType'),
   ~replace(., is.na(.), 'None')
   )
 test2 <- test1 %>% mutate_at(
   c('GarageType', 'GarageFinish', 'GarageQual', 'GarageQual', 'GarageCond', 
     'Alley', 'BsmtQual', 'BsmtCond', 'BsmtExposure', 'BsmtFinType1', 
-    'BsmtFinType2', 'FireplaceQu', 'PoolQC', 'Fence', 'MiscFeature'),
+    'BsmtFinType2', 'FireplaceQu', 'PoolQC', 'Fence', 'MiscFeature', 
+    'Electrical', 'MasVnrType'),
   ~replace(., is.na(.), 'None')
   )
 ```
@@ -90,13 +92,19 @@ Our data should be relatively clean now, and any further imputations can occur w
 
 ```{r}
 trainCorr <- train2 %>% 
-  select(-SalePrice) %>% 
   select_if(is.numeric) %>%  
   na.omit() %>% 
   cor()
 
-names(train2[findCorrelation(trainCorr, cutoff = 0.7)])
+highcorrvars <- findCorrelation(
+  trainCorr[-which(rownames(as.data.frame(trainCorr))=='SalePrice'),
+            -which(names(as.data.frame(trainCorr))=='SalePrice')], 
+  cutoff = 0.7, names = TRUE) %>% as.data.frame()
 
+SPCorrVars <- trainCorr %>% as.data.frame() %>%  select(SalePrice) %>% filter(abs(SalePrice) > 0.6) %>% rownames() %>% as.data.frame() %>% filter(. != 'SalePrice')
+
+highcorrvars
+SPCorrVars
 trainCorr %>% corrplot(order = 'original', type = 'lower', tl.srt = 45, tl.cex = 0.7)
 ```
 \
@@ -113,11 +121,11 @@ charPlots <- lapply(colnames(select_if(train2, is.character)),
 
 charPlots[[1]] + charPlots[[2]] + charPlots[[3]] + charPlots[[4]] + charPlots[[5]] + charPlots[[6]] +
 charPlots[[7]] + charPlots[[8]] + charPlots[[9]] + charPlots[[10]] + charPlots[[11]] + charPlots[[12]]
-charPlots[[13]] + charPlots[[14]] + charPlots[[15]] + charPlots[[16]] + charPlots[[17]] + charPlots[[18]] +
+charPlots[[13]] + charPlots[[14]] + charPlots[[15]] + charPlots[[16]] + charPlots[[17]] + charPlots[[18]]
 charPlots[[19]] + charPlots[[20]] + charPlots[[21]] + charPlots[[22]] + charPlots[[23]] + charPlots[[24]]
-charPlots[[25]] + charPlots[[26]] + charPlots[[27]] + charPlots[[28]] + charPlots[[29]] + charPlots[[30]] +
+charPlots[[25]] + charPlots[[26]] + charPlots[[27]] + charPlots[[28]] + charPlots[[29]] + charPlots[[30]]
 charPlots[[31]] + charPlots[[32]] + charPlots[[33]] + charPlots[[34]] + charPlots[[35]] + charPlots[[36]]
-charPlots[[37]] + charPlots[[38]] + charPlots[[39]] + charPlots[[40]] + charPlots[[41]] + charPlots[[42]] +
+charPlots[[37]] + charPlots[[38]] + charPlots[[39]] + charPlots[[40]] + charPlots[[41]] + charPlots[[42]]
 charPlots[[43]] + charPlots[[44]]
 
 names(train2[nearZeroVar(train2)]) %>% as.data.frame()
@@ -142,9 +150,208 @@ numPlots[[31]] + numPlots[[32]] + numPlots[[33]] + numPlots[[34]] + numPlots[[35
 numPlots[[37]]
 ```
 \
-There is definitely some skewness across several of the numeric predictors, so BoxCox transformations will likely be useful for models sensitive to skewness.
+There is definitely some skewness across several of the numeric predictors, so BoxCox transformations will likely be useful for models sensitive to skewness. With the number of categorical variables, it will likely be worth it to create dummy variables to be able to include such variables in certain types of models like Ordinary Least Squares.
+
+## Statistical Learning Methods
+
+In our project to predict housing prices, we selected a diverse set of statistical and machine learning methods to ensure robustness and accuracy in our model performance. Each method offers unique benefits suited for different aspects of our data:
+
+1.  **Ordinary Least Squares (OLS)**: We chose OLS for its simplicity and interpretability. It serves as a baseline model, providing an initial understanding of the relationships between features and the target variable.
+
+2.  **Random Forest**: Random Forest was chosen because we wanted the advantage of decision trees to handle the number of qualitative predictors in the dataset, wile still improving predictability over regular decision trees and being able to measure variable importance. 
+
+3.  **Support Vector Machines (SVM)**: SVM is included due to its effectiveness in high-dimensional spaces and its robustness against overfitting, especially in cases where the number of features is greater than the number of observations. SVM's ability to use different kernel functions allows us to model non-linear relationships which is important for accurate house price predictions.
+
+Each of these methods was selected to complement the others, covering a range of assumptions about data distribution and structure. This varied approach ensures that we can tackle the problem of predicting housing prices from multiple angles, enhancing the overall accuracy and reliability of our results.
+
+We will start with OLS, so we will need to create dummy variables to be able to fit the model. Then we will split the train set into a training and test set, since the provided test set does not have values for the response variable.
+```{r}
+SalesPrice <- train2[which(colnames(train2) == 'SalePrice')][[1]]
+train2 <- train2[-which(colnames(train2) == 'SalePrice')]
+
+train3 <- train2[-nearZeroVar(na.omit(train2))]
+
+dummyfier <- dummyVars(~., train3)
+dummywhole <- predict(dummyfier, train3) %>% as.data.frame()
+
+set.seed(100)
+isTrain <- createDataPartition(SalesPrice, p = 0.8)[[1]]
+
+train4 <- dummywhole[isTrain,]
+test4 <- dummywhole[-isTrain,]
+SalesPriceTrain <- SalesPrice[isTrain]
+SalesPriceTest <- SalesPrice[-isTrain]
+```
+
+```{r}
+set.seed(100)
+indx <- createFolds(SalesPriceTrain, returnTrain = TRUE)
+ctrl <- trainControl(method = 'repeatedcv',
+                     repeats = 10)
+```
+
+```{r}
+set.seed(100)
+ols1 <- train(x = train4, y = SalesPriceTrain,
+              #na.Remove = TRUE,
+              preProcess = c('center','scale', 'BoxCox', 'knnImpute', 'zv', 'nzv'),
+              method = 'lm',
+              trControl = ctrl)
+ols1
+plot(residuals(ols1))
+
+testpreds = data.frame(
+  obs = SalesPriceTest,
+  ols = predict(ols1, test4)
+)
+
+postResample(testpreds$ols,testpreds$obs)
+```
+
+Training performance for the OLS model is quite good, but it does not hold up as well against the test set. Still, this sets a baseline for other models to beat.  
+Next we will fit a Random Forest model. Since Random Forest model is able to handle qualitative predictors, we can use the non-dummy variables this time. This will hopefully reduce some of the predictor noise since there will be fewer models with which to predict.
+
+```{r}
+train3 <- train3 %>% as.data.frame()
+preprocd <- preProcess(train3, method = c('knnImpute'))
+train3PP <- predict(preprocd, train3)
+train5 <- train3PP[isTrain,] %>% as.data.frame()
+test5 <- train3PP[-isTrain,] %>% as.data.frame()
+```
 
 
+```{r}
+set.seed(100)
+mtryGrid <- data.frame(mtry = floor(seq(10,ncol(train5), length = 10)))
+
+rf1 <- train(x = train5, y = SalesPriceTrain,  
+                    method = "rf",
+                    tuneGrid = mtryGrid,
+                    ntree = 200,
+                    importance = TRUE,
+                    trControl = ctrl)
+rf1
+rfImp <- varImp(rf1, scale = FALSE)
+
+plot(rf1)
+plot(rfImp, top = 25)
+
+testpreds$RF <-  predict(rf1, test5)
+
+postResample(testpreds$RF,testpreds$obs)
+```
+
+The Random Forest model looks good, but the performance against the test data suggests there is room for improvement. The Random Forest model does provide us with variable importance, however, and the chart above summarizes these results. We can use these variable importances in our next model, along with the correlation matrix observed earlier to see if we can identify just a few variables of interest. We will then fit an SVM model with a radial basis function using our chosen variables.
+
+The variables that seem reasonable to use moving forward are: OverallQual, GrLivArea, TotalBsmtSF, GarageCars, and FullBath. They don't appear to have issues with missing values, the appeared highly correlated to Sales Price, and there is only slight skewness (which I will address) among a few of them.
+
+Double checking variance amongst the 5 chosen:
+
+```{r}
+chosen_variables <- c("OverallQual", "GrLivArea", "TotalBsmtSF", "GarageCars", "FullBath")
+
+variances <- sapply(train2[chosen_variables], var, na.rm = TRUE)
+
+print(variances)
+```
+
+```{r}
+skim(train2[chosen_variables])
+```
+
+```{r}
+summary(trainRaw %>% select(all_of(chosen_variables)))
+```
+
+I will need to address the skewness within the GrLivArea and TotalBsmtSF variables before I can move forward with modeling so I will be applying box cox transformation along substituting any NA's my data for the median value.
+
+```{r}
+box_cox_transform <- function(x) {
+  x[is.na(x)] <- median(x, na.rm = TRUE)
+  x <- x + 1e-6
+  trans <- BoxCoxTrans(x)
+  if (trans$lambda == 0) {
+    return(log(x))
+  } else {
+    return(predict(trans, x))
+  }
+}
 
 
+train_trans <- trainRaw %>%
+  mutate(GrLivArea_BoxCox = box_cox_transform(GrLivArea),
+         TotalBsmtSF_BoxCox = box_cox_transform(TotalBsmtSF))
 
+```
+
+Here are the final data sets after transformation:
+
+```{r}
+train_final <- train_trans %>%
+  select(SalePrice, OverallQual, GarageCars, FullBath, GrLivArea_BoxCox, TotalBsmtSF_BoxCox)
+
+head(train_final)
+```
+
+Next will start the process of implementing a Support Vector Machine model for our data. We've chosen this method for predicting housing prices because we're not entirely sure if relationship between the features and the target is complex or potentially non-linear.
+
+```{r}
+set.seed(100)
+
+x=cbind(predictors, train_final$SalePrice)
+inTrain <- createDataPartition(train_final$SalePrice, p=.8)[[1]]
+train_data <- train_final[inTrain, ]
+test_data <- train_final[-inTrain, ]
+```
+
+Implement some centering and scaling...
+
+```{r}
+preProcValues <- preProcess(train_data[, -1], method = c("center", "scale"))
+train_data_preprocessed <- predict(preProcValues, train_data[, -1])
+test_data_preprocessed <- predict(preProcValues, test_data[, -1])
+```
+
+```{r}
+train_data_preprocessed$SalePrice <- train_data$SalePrice
+test_data_preprocessed$SalePrice <- test_data$SalePrice
+```
+
+Now to train the SVM model...
+
+```{r}
+set.seed(1056)  
+svmFit <- train(SalePrice ~ ., 
+                   data = train_data_preprocessed,
+                   method = "svmRadial",
+                   preProcess = c("center", "scale"),
+                   tuneLenght = 10,
+                   trControl = trainControl(method = "repeatedcv",
+                                            repeats = 10))
+
+
+print(svmFit)
+```
+
+Now to use on the test data and evaluate...
+
+```{r}
+svm_prediction <- predict(svmFit, newdata = test_data_preprocessed)
+
+svm_performance <- postResample(pred = svm_prediction, obs = test_data_preprocessed$SalePrice)
+print(svm_performance)
+```
+
+Interpretation of Performance Results for the SVM model:
+
+-   The R² value of 0.8412 shows our SVM model explains a substantial portion of the variance in house prices.
+
+-   The RMSE and MAE values suggest that the model's predictions are reasonably close to the actual values but still have room for improvement. The typical prediction error is in the range of \$20,000 to \$30,000.We could use some additional model tuning or add additional features to improve the prediction accuracy (such as experimenting with some additional hyper parameter tuning)
+
+```{r}
+testPerfs2 <- rbind(OLS = postResample(testpreds$ols, testpreds$obs),
+                   RF = postResample(testpreds$RF, testpreds$obs),
+                   SVMr = postResample(testpreds$SVMr, testpreds$obs))
+
+testPerfs2
+```

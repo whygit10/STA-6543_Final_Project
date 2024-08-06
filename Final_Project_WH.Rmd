@@ -405,10 +405,6 @@ highcorrvars
 bestvars1 <- setdiff(union(topmodvars[[1]],SPCorrVars[[1]]), highcorrvars[[1]])
 ```
 
-Our two best performing models are SVM with a Radial Basis Function, and Random Forest. With Random Forest, we can see variable importance. We can also see that with the MARS model, although the MARS model does not perform as well as the Random Forest model did. We can also look back at the variables that were highly correlated with Sale Price from our correlation matrix. Both models agreed on several variables, and most of those we can see were highly correlated with Sale Price from our earlier correlation matrix. If we start with the variables that were in both models, add any others highly correlated with Sale Price, and remove variables that are highly correlated with each other, we get the following:
-`OverallQual`, `BsmtFinSF1`  `OverallCond`, `LotArea`, `1stFlrSF`, and `GarageArea`  
-We will attempt to recreate our better performing models with these variables, namely SVM and Random Forest.
-
 ```{r}
 # 1stFlrSF added manually due to ticks from starting with a number
 train5 <- train4[which(names(train4) %in% c(bestvars1, '`1stFlrSF`'))]
