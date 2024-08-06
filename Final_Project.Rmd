@@ -331,6 +331,8 @@ svmFit <- train(SalePrice ~ .,
 
 
 print(svmFit)
+
+testpreds$SVMr <-  predict(svmFit, test_data_preprocessed)
 ```
 
 Now to use on the test data and evaluate...
