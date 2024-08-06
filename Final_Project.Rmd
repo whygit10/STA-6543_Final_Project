@@ -6,7 +6,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-pacman::p_load(tidyverse, here, AppliedPredictiveModeling, caret, skimr, corrplot, patchwork)
+pacman::p_load(tidyverse, here, AppliedPredictiveModeling, caret, skimr, corrplot, patchwork, grid)
 
 trainRaw <- read_csv(here('train.csv'))
 testRaw <- read_csv(here('test.csv'))
@@ -357,3 +357,43 @@ testPerfs2 <- rbind(OLS = postResample(testpreds$ols, testpreds$obs),
 
 testPerfs2
 ```
+
+```{r}
+# SVM model plot
+svm_plot <- ggplot(data = testpreds, aes(x = obs, y = SVMr)) +
+  geom_point(color = "blue", alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(x = "Actual SalePrice", y = "Predicted SalePrice", title = "SVM") +
+  theme_minimal(base_size = 15) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+# Rand Forest model plot
+mars_plot <- ggplot(data = testpreds, aes(x = obs, y = RF)) +
+  geom_point(color = "green", alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(x = "Actual SalePrice", y = "Predicted SalePrice", title = "RF") +
+  theme_minimal(base_size = 15) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+# Neural Network model plot
+nnet_plot <- ggplot(data = testpreds, aes(x = obs, y = ols)) +
+  geom_point(color = "purple", alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(x = "Actual SalePrice", y = "Predicted SalePrice", title = "OLS") +
+  theme_minimal(base_size = 15) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+
+# Arrange plots in a grid
+grid.newpage()
+pushViewport(viewport(layout = grid.layout(1, 3)))
+
+# Function to define layout positions
+vplayout <- function(x, y) viewport(layout.pos.row = x, layout.pos.col = y)
+
+# Print the plots in the defined layout
+print(svm_plot, vp = vplayout(1, 1))
+print(mars_plot, vp = vplayout(1, 2))
+print(nnet_plot, vp = vplayout(1, 3))
+```
+
