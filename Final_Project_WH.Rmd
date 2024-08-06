@@ -90,13 +90,19 @@ Our data should be relatively clean now, and any further imputations can occur w
 
 ```{r}
 trainCorr <- train2 %>% 
-  select(-SalePrice) %>% 
   select_if(is.numeric) %>%  
   na.omit() %>% 
   cor()
 
-names(train2[findCorrelation(trainCorr, cutoff = 0.7)])
+highcorrvars <- findCorrelation(
+  trainCorr[-which(rownames(as.data.frame(trainCorr))=='SalePrice'),
+            -which(names(as.data.frame(trainCorr))=='SalePrice')], 
+  cutoff = 0.7, names = TRUE) %>% as.data.frame()
 
+SPCorrVars <- trainCorr %>% as.data.frame() %>%  select(SalePrice) %>% filter(abs(SalePrice) > 0.6) %>% rownames() %>% as.data.frame() %>% filter(. != 'SalePrice')
+
+highcorrvars
+SPCorrVars
 trainCorr %>% corrplot(order = 'original', type = 'lower', tl.srt = 45, tl.cex = 0.7)
 ```
 \
@@ -194,6 +200,8 @@ SalesPriceTest <- SalesPrice[-isTrain]
 set.seed(100)
 indx <- createFolds(SalesPriceTrain, returnTrain = TRUE)
 ctrl <- trainControl(method = "cv", index = indx)
+ctrl2 <- trainControl(method = 'repeatedcv',
+                     repeats = 10)
 ```
 
 
@@ -375,5 +383,200 @@ testPerfs2 <- rbind(testPerfs,
                    RF = postResample(testpreds$RF, testpreds$obs))
 
 testPerfs2
+```
+
+```{r}
+topmodvars <- intersect(marsImp$importance %>% as.data.frame() %>% arrange(by = -Overall) %>% head(20) %>% rownames(), rfImp$importance %>% as.data.frame() %>% arrange(by = -Overall) %>% head(20) %>% rownames()) %>% as.data.frame()
+
+
+othermodvars <- setdiff(rfImp$importance %>% as.data.frame() %>% arrange(by = -Overall) %>% head(20) %>% rownames(), marsImp$importance %>% as.data.frame() %>% arrange(by = -Overall) %>% head(20) %>% rownames()) %>% as.data.frame()
+
+
+names(topmodvars) <- 'Top From Models'
+names(othermodvars) <- 'Secondary From Models'
+names(SPCorrVars) <- 'Top From Corr Matrix'
+names(highcorrvars) <- 'Highly Correlated With Each Other'
+
+topmodvars
+othermodvars
+SPCorrVars
+highcorrvars
+
+bestvars1 <- setdiff(union(topmodvars[[1]],SPCorrVars[[1]]), highcorrvars[[1]])
+```
+
+Our two best performing models are SVM with a Radial Basis Function, and Random Forest. With Random Forest, we can see variable importance. We can also see that with the MARS model, although the MARS model does not perform as well as the Random Forest model did. We can also look back at the variables that were highly correlated with Sale Price from our correlation matrix. Both models agreed on several variables, and most of those we can see were highly correlated with Sale Price from our earlier correlation matrix. If we start with the variables that were in both models, add any others highly correlated with Sale Price, and remove variables that are highly correlated with each other, we get the following:
+`OverallQual`, `BsmtFinSF1`  `OverallCond`, `LotArea`, `1stFlrSF`, and `GarageArea`  
+We will attempt to recreate our better performing models with these variables, namely SVM and Random Forest.
+
+```{r}
+# 1stFlrSF added manually due to ticks from starting with a number
+train5 <- train4[which(names(train4) %in% c(bestvars1, '`1stFlrSF`'))]
+test5 <- test4[which(names(test4) %in% c(bestvars1, '`1stFlrSF`'))]
+```
+
+```{r}
+set.seed(100)  
+svmr2 <- train(x = train5, y = SalesPriceTrain,
+                   method = "svmRadial",
+                   preProcess = c("center", "scale", 'BoxCox'),
+                   tuneLength = 10,
+                   trControl = ctrl)
+svmr2
+
+plot(svmr2)
+
+testpreds$SVMr2 <-  predict(svmr2, test5)
+
+postResample(testpreds$SVMr2, testpreds$obs)
+```
+
+```{r}
+set.seed(100)
+mtryGrid2 <- data.frame(mtry = floor(seq(0, 10, length = 11)))
+
+rf2 <- train(x = train5, y = SalesPriceTrain,  
+                    method = "rf",
+                    #preProc = c('knnImpute', 'zv', 'nzv'),
+                    tuneGrid = mtryGrid2,
+                    ntree = 200,
+                    importance = TRUE,
+                    trControl = ctrl)
+rf2
+rfImp2 <- varImp(rf2, scale = FALSE)
+
+plot(rf2)
+plot(rfImp2, top = 25)
+
+testpreds$RF2 <-  predict(rf2, test5)
+
+postResample(testpreds$RF2, testpreds$obs)
+```
+
+```{r}
+bestvars2 <- c('OverallQual', 'GarageCars', 'FullBath', 'GrLivArea', 'TotalBsmtSF')
+
+train6 <- train4[which(names(train4) %in% c(bestvars2))]
+test6 <- test4[which(names(test4) %in% c(bestvars2))]
+```
+
+```{r}
+set.seed(100)  
+svmr3 <- train(x = train6, y = SalesPriceTrain,
+                   method = "svmRadial",
+                   preProcess = c("center", "scale", 'BoxCox'),
+                   tuneLength = 10,
+                   trControl = ctrl)
+svmr3
+
+plot(svmr3)
+
+testpreds$SVMr3 <-  predict(svmr3, test6)
+
+postResample(testpreds$SVMr3, testpreds$obs)
+```
+
+```{r}
+set.seed(100)
+mtryGrid2 <- data.frame(mtry = floor(seq(0, 10, length = 11)))
+
+rf3 <- train(x = train6, y = SalesPriceTrain,  
+                    method = "rf",
+                    #preProc = c('knnImpute', 'zv', 'nzv'),
+                    tuneGrid = mtryGrid2,
+                    ntree = 200,
+                    importance = TRUE,
+                    trControl = ctrl)
+rf3
+rfImp3 <- varImp(rf3, scale = FALSE)
+
+plot(rf3)
+plot(rfImp3, top = 25)
+
+testpreds$RF3 <-  predict(rf3, test6)
+
+postResample(testpreds$RF3, testpreds$obs)
+```
+
+```{r}
+bestvars3 <- union(union(topmodvars[[1]],SPCorrVars[[1]]),othermodvars[[1]])
+
+train7 <- train4[which(names(train4) %in% c(bestvars3))]
+test7 <- test4[which(names(test4) %in% c(bestvars3))]
+```
+
+```{r}
+set.seed(100)  
+svmr4 <- train(x = train7, y = SalesPriceTrain,
+                   method = "svmRadial",
+                   preProcess = c("center", "scale", 'BoxCox'),
+                   tuneLength = 10,
+                   trControl = ctrl)
+svmr4
+
+plot(svmr4)
+
+testpreds$SVMr4 <-  predict(svmr4, test7)
+
+postResample(testpreds$SVMr4, testpreds$obs)
+```
+
+```{r}
+set.seed(100)
+mtryGrid3 <- data.frame(mtry = floor(seq(10,ncol(train7), length = 10)))
+
+rf4 <- train(x = train7, y = SalesPriceTrain,  
+                    method = "rf",
+                    #preProc = c('knnImpute', 'zv', 'nzv'),
+                    tuneGrid = mtryGrid3,
+                    ntree = 200,
+                    importance = TRUE,
+                    trControl = ctrl)
+rf4
+rfImp4 <- varImp(rf4, scale = FALSE)
+
+plot(rf4)
+plot(rfImp4, top = 25)
+
+testpreds$RF4 <-  predict(rf4, test7)
+
+postResample(testpreds$RF4, testpreds$obs)
+```
+
+#### Pre Process redo
+```{r}
+pop <- train2[which(names(train2) %in% c(bestvars2))]
+
+BCtransvars <- pop %>% select(GrLivArea, TotalBsmtSF)
+
+GrLivArea_BC <- predict(BoxCoxTrans(BCtransvars[[1]]), BCtransvars[[1]])
+TotalBsmtSF_BC <- predict(BoxCoxTrans(BCtransvars[[2]]), BCtransvars[[2]])
+BCtrans <- cbind(GrLivArea_BC = GrLivArea_BC, TotalBsmtSF_BC = TotalBsmtSF_BC)
+
+popBC <- pop %>% select(-GrLivArea, -TotalBsmtSF) %>% bind_cols(BCtrans) %>% as.data.frame()
+train8 <- popBC[isTrain,]
+test8 <- popBC[-isTrain,]
+
+preproctrain <- preProcess(train8, method = c('center', 'scale'))
+train9 <- predict(preproctrain, train8)
+test9 <- predict(preproctrain, test8)
+```
+
+#### SVM Redo
+```{r}
+set.seed(100)  
+svmr5 <- train(x = train9, y = SalesPriceTrain,
+                   method = "svmRadial",
+                   preProcess = c("center", "scale"),
+                   tuneLength = 10,
+                   trControl = ctrl2)
+svmr5
+
+plot(svmr5)
+postResample(predict(svmr5, test9), SalesPriceTest)
+
+testpreds$SVMr5 <-  predict(svmr5, test9)
+
+postResample(testpreds$SVMr5, testpreds$obs)
 ```
 

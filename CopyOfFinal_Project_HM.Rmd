@@ -114,7 +114,7 @@ Depending on the model that we fit we may have to contend with things like skewn
 
 ```{r}
 trainCorr <- train2 %>% 
-  select(-SalePrice) %>% 
+  #select(-SalePrice) %>% 
   select_if(is.numeric) %>%  
   na.omit() %>% 
   cor()
