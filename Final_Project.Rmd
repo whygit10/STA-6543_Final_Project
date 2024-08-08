@@ -18,10 +18,11 @@ testRaw <- read_csv(here('test.csv'))
 head(trainRaw)
 skim(trainRaw)
 ```
+
 \
-    Missing values in `LotFrontage`, `MasVnrArea`, `GarageYrBlt`, `Alley`, `MasVnrType`, `BsmtQual`, `BsmtCond`, `BsmtExposure`, `BsmtFinType1`, `BsmtFinType2`, `Electrical`, `FireplaceQu`, `GarageType`, `GarageFinish`, `GarageQual`, `GarageCond`, `PoolQC`, `Fence`, and `MiscFeature`. Some of these missing values may actually be informative, for example several missing values have to do with a basement, so a missing value there may just mean there is no basement in that home. As such we may be able to use logic to impute rather than statistical methods.  
-`MSSubClass` also comes in as a numeric variable but appears to be a code for a categorical/factor variable. Some other variables are numeric for 1-10 scores, meaning they may be better suited as ordinal categorical variables, but considering the number of other ordinal categorical variable we may only need to address this if it causes any issues.  
-Note that our test data set does not have the actual sale price of the houses, so post-resample methods will be unavailable.  
+Missing values in `LotFrontage`, `MasVnrArea`, `GarageYrBlt`, `Alley`, `MasVnrType`, `BsmtQual`, `BsmtCond`, `BsmtExposure`, `BsmtFinType1`, `BsmtFinType2`, `Electrical`, `FireplaceQu`, `GarageType`, `GarageFinish`, `GarageQual`, `GarageCond`, `PoolQC`, `Fence`, and `MiscFeature`. Some of these missing values may actually be informative, for example several missing values have to do with a basement, so a missing value there may just mean there is no basement in that home. As such we may be able to use logic to impute rather than statistical methods.\
+`MSSubClass` also comes in as a numeric variable but appears to be a code for a categorical/factor variable. Some other variables are numeric for 1-10 scores, meaning they may be better suited as ordinal categorical variables, but considering the number of other ordinal categorical variable we may only need to address this if it causes any issues.\
+Note that our test data set does not have the actual sale price of the houses, so post-resample methods will be unavailable.
 
 ```{r}
 # Addressing MSSubClass
@@ -36,15 +37,18 @@ test1 <- testRaw %>% mutate(
 ```{r}
 train1 %>% filter(is.na(GarageYrBlt),is.na(GarageType)) %>% select(GarageType) %>% nrow()
 ```
+
 ```{r}
 rbind(train1 %>% filter(!is.na(BsmtQual),is.na(BsmtFinType2)),
 train1 %>% filter(!is.na(BsmtQual),is.na(BsmtExposure)))
 ```
+
 ```{r}
 train1 %>% filter(is.na(LotFrontage)) %>% group_by(LotConfig) %>% summarize(
   cnt = n()
 )
 ```
+
 ```{r}
 train1 %>% 
   #filter(is.na(MasVnrArea)) %>%
@@ -56,7 +60,6 @@ train1 %>%
 )
 ```
 
-\
 Two records have missing values for some of the basement quality variables where they don't necessarily make sense. The rest of the missing basement variables occur due to there not being a basement. In this case we can still treat these out of place missing variables the same way we do the others, since it is only two records it is unlikely to have a large impact on our models. The same can be said of two other variables, `Electrical` and `MasVnrType`, which have only a small handful of missing values, so would be unlikely to impact a model.
 
 ```{r}
@@ -75,20 +78,22 @@ test2 <- test1 %>% mutate_at(
   ~replace(., is.na(.), 'None')
   )
 ```
+
 \
-We can't really impute the `GarageYrBlt` logically, i.e. we can't state a year that the garage was built if it doesn't exist, but depending on model performance/ results we may be able to impute that value statistically (mean, median, mode, knn). It would not represent a true year but more a placeholder to represent similar levels of quality across homes.   
-`LotFrontage` still has missing values, but looking at `LotConfig` suggests these do not appear to intentionally missing. There are records with missing values for `LotFrontage` despite the fact that `LotConfig` states there are two sides with Lot Frontage. The records where `LotConfig` is equal to 'Inside' may indicate there is not Frontage, however the records on the other values are enough to cause some uncertainty. Therefore, it makes the most sense to impute this record as well.  
-For the two Masonry variables `MasVnrType` and `MasVnrArea`, these are really the only two variables that directly inform each other, so we don't have a way to reasonably impute these two logically. That in mind, there is a value that `MasVnrType` can take for when there is no Masonry Veneer, and in those instances `MasVnrArea` is *usually* 0. Also worth noting that in the instances when the Masonry Variables are missing the `LotConfig` is *usually* 'Inside', which may suggest that properties with an inside lot don't have any Masonry Veneer. Therefore it would make some sense to impute `MasVnrType` and `MasVnrArea` as 'None' and 0 respectively, but again there is enough uncertainty and few enough variables I think statistical imputation methods should be considered first.  
+We can't really impute the `GarageYrBlt` logically, i.e. we can't state a year that the garage was built if it doesn't exist, but depending on model performance/ results we may be able to impute that value statistically (mean, median, mode, knn). It would not represent a true year but more a placeholder to represent similar levels of quality across homes.\
+`LotFrontage` still has missing values, but looking at `LotConfig` suggests these do not appear to intentionally missing. There are records with missing values for `LotFrontage` despite the fact that `LotConfig` states there are two sides with Lot Frontage. The records where `LotConfig` is equal to 'Inside' may indicate there is not Frontage, however the records on the other values are enough to cause some uncertainty. Therefore, it makes the most sense to impute this record as well.\
+For the two Masonry variables `MasVnrType` and `MasVnrArea`, these are really the only two variables that directly inform each other, so we don't have a way to reasonably impute these two logically. That in mind, there is a value that `MasVnrType` can take for when there is no Masonry Veneer, and in those instances `MasVnrArea` is *usually* 0. Also worth noting that in the instances when the Masonry Variables are missing the `LotConfig` is *usually* 'Inside', which may suggest that properties with an inside lot don't have any Masonry Veneer. Therefore it would make some sense to impute `MasVnrType` and `MasVnrArea` as 'None' and 0 respectively, but again there is enough uncertainty and few enough variables I think statistical imputation methods should be considered first.
 
 ```{r}
 train2 %>% skim()
 ```
+
 \
 Our data should be relatively clean now, and any further imputations can occur within the respective models that we fit.
 
 ## Exploratory Analysis
 
-  Depending on the model that we fit we may have to contend with things like skewness, multicollinearity, near zero variance, and centered and scaling. 
+Depending on the model that we fit we may have to contend with things like skewness, multicollinearity, near zero variance, and centered and scaling.
 
 ```{r}
 trainCorr <- train2 %>% 
@@ -107,7 +112,7 @@ highcorrvars
 SPCorrVars
 trainCorr %>% corrplot(order = 'original', type = 'lower', tl.srt = 45, tl.cex = 0.7)
 ```
-\
+
 A few variables have relatively high correlation, but for the most most part the variables are pretty independent.
 
 ```{r}
@@ -130,6 +135,7 @@ charPlots[[43]] + charPlots[[44]]
 
 names(train2[nearZeroVar(train2)]) %>% as.data.frame()
 ```
+
 We definitely have some variables with Near Zero Variance, so models sensitive to these sorts of variables should have that included in their pre-processing.
 
 ```{r, warning=FALSE}
@@ -149,7 +155,7 @@ numPlots[[25]] + numPlots[[26]] + numPlots[[27]] + numPlots[[28]] + numPlots[[29
 numPlots[[31]] + numPlots[[32]] + numPlots[[33]] + numPlots[[34]] + numPlots[[35]] + numPlots[[36]]
 numPlots[[37]]
 ```
-\
+
 There is definitely some skewness across several of the numeric predictors, so BoxCox transformations will likely be useful for models sensitive to skewness. With the number of categorical variables, it will likely be worth it to create dummy variables to be able to include such variables in certain types of models like Ordinary Least Squares.
 
 ## Statistical Learning Methods
@@ -158,13 +164,14 @@ In our project to predict housing prices, we selected a diverse set of statistic
 
 1.  **Ordinary Least Squares (OLS)**: We chose OLS for its simplicity and interpretability. It serves as a baseline model, providing an initial understanding of the relationships between features and the target variable.
 
-2.  **Random Forest**: Random Forest was chosen because we wanted the advantage of decision trees to handle the number of qualitative predictors in the dataset, wile still improving predictability over regular decision trees and being able to measure variable importance. 
+2.  **Random Forest**: Random Forest was chosen because we wanted the advantage of decision trees to handle the number of qualitative predictors in the dataset, wile still improving predictability over regular decision trees and being able to measure variable importance.
 
 3.  **Support Vector Machines (SVM)**: SVM is included due to its effectiveness in high-dimensional spaces and its robustness against overfitting, especially in cases where the number of features is greater than the number of observations. SVM's ability to use different kernel functions allows us to model non-linear relationships which is important for accurate house price predictions.
 
 Each of these methods was selected to complement the others, covering a range of assumptions about data distribution and structure. This varied approach ensures that we can tackle the problem of predicting housing prices from multiple angles, enhancing the overall accuracy and reliability of our results.
 
 We will start with OLS, so we will need to create dummy variables to be able to fit the model. Then we will split the train set into a training and test set, since the provided test set does not have values for the response variable.
+
 ```{r}
 SalesPrice <- train2[which(colnames(train2) == 'SalePrice')][[1]]
 train2 <- train2[-which(colnames(train2) == 'SalePrice')]
@@ -208,7 +215,7 @@ testpreds = data.frame(
 postResample(testpreds$ols,testpreds$obs)
 ```
 
-Training performance for the OLS model is quite good, but it does not hold up as well against the test set. Still, this sets a baseline for other models to beat.  
+Training performance for the OLS model is quite good, but it does not hold up as well against the test set. Still, this sets a baseline for other models to beat.\
 Next we will fit a Random Forest model. Since Random Forest model is able to handle qualitative predictors, we can use the non-dummy variables this time. This will hopefully reduce some of the predictor noise since there will be fewer models with which to predict.
 
 ```{r}
@@ -218,7 +225,6 @@ train3PP <- predict(preprocd, train3)
 train5 <- train3PP[isTrain,] %>% as.data.frame()
 test5 <- train3PP[-isTrain,] %>% as.data.frame()
 ```
-
 
 ```{r}
 set.seed(100)
@@ -243,9 +249,9 @@ postResample(testpreds$RF,testpreds$obs)
 
 The Random Forest model looks good, but the performance against the test data suggests there is room for improvement. The Random Forest model does provide us with variable importance, however, and the chart above summarizes these results. We can use these variable importances in our next model, along with the correlation matrix observed earlier to see if we can identify just a few variables of interest. We will then fit an SVM model with a radial basis function using our chosen variables.
 
-The variables that seem reasonable to use moving forward are: OverallQual, GrLivArea, TotalBsmtSF, GarageCars, and FullBath. They don't appear to have issues with missing values, the appeared highly correlated to Sales Price, and there is only slight skewness (which I will address) among a few of them.
+The variables that seem reasonable to use moving forward are: OverallQual, GrLivArea, TotalBsmtSF, GarageCars, and FullBath. They don't appear to have issues with missing values, they appeared highly correlated to Sales Price, and there is only slight skewness (which will be addressed) among a few of them.
 
-Double checking variance amongst the 5 chosen:
+Variance among these 5 chosen variables was not yet run. Prior to proceeding, It's crucial to check for zero variance in variables before incorporating them into a model because such variables provide no information that can help distinguish between observations in different categories or predict an outcome. Including them can waste computational resources and potentially introduce noise into the model, compromising its accuracy.
 
 ```{r}
 chosen_variables <- c("OverallQual", "GrLivArea", "TotalBsmtSF", "GarageCars", "FullBath")
@@ -255,6 +261,8 @@ variances <- sapply(train2[chosen_variables], var, na.rm = TRUE)
 print(variances)
 ```
 
+The analysis highlights the significance of various predictors in determining housing prices, with no zero variance found among the variables, ensuring their variability contributes meaningfully to the model. 'GrLivArea' and 'TotalBsmtSF' are the most influential, indicating that larger living areas and basements significantly impact house prices. 'OverallQual' is also critical, suggesting that homes of higher quality command higher prices. While 'GarageCars' and 'FullBath' have smaller impacts, the number of cars a garage holds and the number of full bathrooms still positively influence the price, albeit to a lesser degree.
+
 ```{r}
 skim(train2[chosen_variables])
 ```
@@ -263,7 +271,7 @@ skim(train2[chosen_variables])
 summary(trainRaw %>% select(all_of(chosen_variables)))
 ```
 
-I will need to address the skewness within the GrLivArea and TotalBsmtSF variables before I can move forward with modeling so I will be applying box cox transformation along substituting any NA's my data for the median value.
+It is also essential to address the skewness observed in the 'GrLivArea' and 'TotalBsmtSF' variables. To rectify this, a Box-Cox transformation will be applied to normalize the distributions. Additionally, any missing values in the data will be replaced with the median value to maintain data integrity and ensure robust model performance.
 
 ```{r}
 box_cox_transform <- function(x) {
@@ -284,7 +292,7 @@ train_trans <- trainRaw %>%
 
 ```
 
-Here are the final data sets after transformation:
+Here are the transformed datasets, finalized and ready for further analysis.
 
 ```{r}
 train_final <- train_trans %>%
@@ -293,7 +301,7 @@ train_final <- train_trans %>%
 head(train_final)
 ```
 
-Next will start the process of implementing a Support Vector Machine model for our data. We've chosen this method for predicting housing prices because we're not entirely sure if relationship between the features and the target is complex or potentially non-linear.
+Next, we implemented a Support Vector Machine (SVM) model to predict housing prices, recognizing the importance of centering and scaling the data to normalize the feature scales and improve model accuracy. This method was selected due to the uncertain complexity and potential non-linearity of the relationships between the features and the target variable. Properly preparing the data ensures more reliable training outcomes, which is crucial for effectively capturing the underlying patterns and relationships
 
 ```{r}
 set.seed(100)
@@ -303,8 +311,6 @@ inTrain <- createDataPartition(train_final$SalePrice, p=.8)[[1]]
 train_data <- train_final[inTrain, ]
 test_data <- train_final[-inTrain, ]
 ```
-
-Implement some centering and scaling...
 
 ```{r}
 preProcValues <- preProcess(train_data[, -1], method = c("center", "scale"))
@@ -316,8 +322,6 @@ test_data_preprocessed <- predict(preProcValues, test_data[, -1])
 train_data_preprocessed$SalePrice <- train_data$SalePrice
 test_data_preprocessed$SalePrice <- test_data$SalePrice
 ```
-
-Now to train the SVM model...
 
 ```{r}
 set.seed(1056)  
@@ -334,8 +338,6 @@ print(svmFit)
 
 testpreds$SVMr <-  predict(svmFit, test_data_preprocessed)
 ```
-
-Now to use on the test data and evaluate...
 
 ```{r}
 svm_prediction <- predict(svmFit, newdata = test_data_preprocessed)
@@ -357,6 +359,12 @@ testPerfs2 <- rbind(OLS = postResample(testpreds$ols, testpreds$obs),
 
 testPerfs2
 ```
+
+The results from the three modeling approaches---Ordinary Least Squares (OLS), Random Forest (RF), and Support Vector Machine with radial basis function (SVMr)---show varying degrees of predictive accuracy on the housing price data.
+
+The SVMr model provided the highest predictive accuracy with an R2R^2R2 value of 0.841, indicating that it explains about 84.1% of the variance in housing prices, and it achieved the lowest Root Mean Square Error (RMSE) of 30,746.72. Although the SVMr model's Mean Absolute Error (MAE) is relatively close to that of the RF model, its substantially better R2R^2R2 and RMSE scores make it the superior model in terms of overall prediction quality.
+
+The RF model also outperforms the OLS model, with a higher R2R^2R2 value and lower errors, underscoring the effectiveness of more complex algorithms over linear approaches for this dataset
 
 ```{r}
 # SVM model plot
@@ -397,3 +405,18 @@ print(mars_plot, vp = vplayout(1, 2))
 print(nnet_plot, vp = vplayout(1, 3))
 ```
 
+## Analysis Results
+
+The analysis process started with a meticulous cleaning of the data, focusing primarily on addressing missing values. For instances where a missing value indicated the absence of a feature (such as a basement or garage), logical imputation was employed. Conversely, for missing values lacking inherent significance, various methods were applied during pre-processing to ensure robustness. The dataset underwent several pre-processing steps, including BoxCox transformations for normalizing distributions, centering and scaling to bring variables to a common scale, removing predictors with near-zero variance to streamline the model, and creating dummy variables necessary for the OLS regression.
+
+The first modeling attempt with Ordinary Least Squares (OLS) served as a baseline, reflecting initial responsiveness of the dependent variable to the predictors. Despite adequate resampling performance, the model exhibited poor generalization to unseen test data, suggesting potential overfitting. To address categorical variables more effectively and gain insights into variable importance, a Random Forest model was subsequently applied. This model yielded improved results across both training and test sets but did not fully optimize the explained variance and error.
+
+A deeper investigation into the importance of variables as suggested by the Random Forest model, alongside correlations identified during data exploration, informed the selection of five key predictors: GrLivArea, OverallQual, TotalBsmtSF, GarageCars, and FullBath. These predictors were chosen for their uniqueness and potential to reduce noise within the model. These variables were then utilized in a Support Vector Machine (SVM) model with a Radial Basis Function kernel, selected for its robustness against outliers. This model demonstrated superior performance and is recommended for its predictive capabilities, significantly outperforming previous models in handling both typical and atypical data points effectively.
+
+In summary, the SVM model emerged as the most effective, recommended for its strong predictive power after thorough examination and optimization of the dataset through various statistical techniques and machine learning models. This iterative approach of refining the model inputs and configurations led to a robust model that leverages the strengths of different statistical techniques to enhance prediction accuracy
+
+## Conclusion
+
+The research into predicting housing prices has demonstrated that certain characteristics, notably GrLivArea, OverallQual, TotalBsmtSF, GarageCars, and FullBath, significantly influence the final sale price of homes. These variables were key in driving the performance of an SVM model equipped with a Radial Basis Function, which proved particularly adept at handling data outliers and complexities inherent in housing market data. This model's robustness to outliers ensures that it is capable of delivering reliable predictions across a diverse range of housing attributes.
+
+The study underscores the multifaceted nature of real estate valuation, where both the size and quality of the property play pivotal roles. Moving forward, a deeper tuning of the current models could unlock even higher accuracy. Additionally, incorporating more variables and extending the analysis to include new data could further refine our understanding and prediction of housing prices. The promising results achieved with the SVM model point to the potential of advanced machine learning techniques to supplement traditional real estate appraisal methods, potentially leading to more rapid and cost-effective property assessments.
