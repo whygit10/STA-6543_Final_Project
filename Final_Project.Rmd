@@ -1,9 +1,25 @@
 ---
-title: "STA-6543_Final_Project"
-author: "William Hyltin ror910, Tim Harrison, Holly Milazzo"
+title: "Comparative Analysis of Predictive Models for Ames, Iowa Housing Prices"
+author: "William Hyltin, Tim Harrison, Holly Milazzo"
 date: "`r Sys.Date()`"
 output: html_document
 ---
+
+## Introduction and Background
+
+This project applies predictive modeling techniques to estimate house prices using a dataset of residential properties within Ames, Iowa. Our goal is to provide a tool that helps real estate stakeholders make informed decisions about property transactions.
+
+To achieve this, our objective was to build a predictive model that accurately forecasts house prices. We did this by methods of:
+
+-   Data Preparation: Tackling missing entries and ensuring data quality.
+
+-   Exploratory Analysis: Examining the data visually and statistically to identify patterns.
+
+-   Feature Engineering: Creating and selecting relevant features to improve model accuracy.
+
+-   Model Development: Training and tuning several models, focusing on their performance metrics.
+
+-   Model Assessment: Employing cross-validation to evaluate model performance and prevent overfitting.
 
 ```{r setup, include=FALSE}
 pacman::p_load(tidyverse, here, AppliedPredictiveModeling, caret, skimr, corrplot, patchwork, grid)
@@ -14,7 +30,7 @@ testRaw <- read_csv(here('test.csv'))
 
 ## Data Cleaning and Observations
 
-```{r}
+```{r message=FALSE, warning=FALSE, include=FALSE}
 head(trainRaw)
 skim(trainRaw)
 ```
@@ -24,7 +40,7 @@ Missing values in `LotFrontage`, `MasVnrArea`, `GarageYrBlt`, `Alley`, `MasVnrTy
 `MSSubClass` also comes in as a numeric variable but appears to be a code for a categorical/factor variable. Some other variables are numeric for 1-10 scores, meaning they may be better suited as ordinal categorical variables, but considering the number of other ordinal categorical variable we may only need to address this if it causes any issues.\
 Note that our test data set does not have the actual sale price of the houses, so post-resample methods will be unavailable.
 
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 # Addressing MSSubClass
 train1 <- trainRaw %>% mutate(
   MSSubClass = as.character(MSSubClass)
@@ -34,22 +50,22 @@ test1 <- testRaw %>% mutate(
 )
 ```
 
-```{r}
+```{r message=FALSE, warning=FALSE, include=FALSE}
 train1 %>% filter(is.na(GarageYrBlt),is.na(GarageType)) %>% select(GarageType) %>% nrow()
 ```
 
-```{r}
+```{r message=FALSE, warning=FALSE, include=FALSE}
 rbind(train1 %>% filter(!is.na(BsmtQual),is.na(BsmtFinType2)),
 train1 %>% filter(!is.na(BsmtQual),is.na(BsmtExposure)))
 ```
 
-```{r}
+```{r message=FALSE, warning=FALSE, include=FALSE}
 train1 %>% filter(is.na(LotFrontage)) %>% group_by(LotConfig) %>% summarize(
   cnt = n()
 )
 ```
 
-```{r}
+```{r message=FALSE, warning=FALSE, include=FALSE}
 train1 %>% 
   #filter(is.na(MasVnrArea)) %>%
   #filter(MasVnrType == 'None') %>%
@@ -62,7 +78,7 @@ train1 %>%
 
 Two records have missing values for some of the basement quality variables where they don't necessarily make sense. The rest of the missing basement variables occur due to there not being a basement. In this case we can still treat these out of place missing variables the same way we do the others, since it is only two records it is unlikely to have a large impact on our models. The same can be said of two other variables, `Electrical` and `MasVnrType`, which have only a small handful of missing values, so would be unlikely to impact a model.
 
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 train2 <- train1 %>% mutate_at(
   c('GarageType', 'GarageFinish', 'GarageQual', 'GarageQual', 'GarageCond', 
     'Alley', 'BsmtQual', 'BsmtCond', 'BsmtExposure', 'BsmtFinType1', 
@@ -79,23 +95,21 @@ test2 <- test1 %>% mutate_at(
   )
 ```
 
-\
 We can't really impute the `GarageYrBlt` logically, i.e. we can't state a year that the garage was built if it doesn't exist, but depending on model performance/ results we may be able to impute that value statistically (mean, median, mode, knn). It would not represent a true year but more a placeholder to represent similar levels of quality across homes.\
 `LotFrontage` still has missing values, but looking at `LotConfig` suggests these do not appear to intentionally missing. There are records with missing values for `LotFrontage` despite the fact that `LotConfig` states there are two sides with Lot Frontage. The records where `LotConfig` is equal to 'Inside' may indicate there is not Frontage, however the records on the other values are enough to cause some uncertainty. Therefore, it makes the most sense to impute this record as well.\
 For the two Masonry variables `MasVnrType` and `MasVnrArea`, these are really the only two variables that directly inform each other, so we don't have a way to reasonably impute these two logically. That in mind, there is a value that `MasVnrType` can take for when there is no Masonry Veneer, and in those instances `MasVnrArea` is *usually* 0. Also worth noting that in the instances when the Masonry Variables are missing the `LotConfig` is *usually* 'Inside', which may suggest that properties with an inside lot don't have any Masonry Veneer. Therefore it would make some sense to impute `MasVnrType` and `MasVnrArea` as 'None' and 0 respectively, but again there is enough uncertainty and few enough variables I think statistical imputation methods should be considered first.
 
-```{r}
+```{r message=FALSE, warning=FALSE, include=FALSE}
 train2 %>% skim()
 ```
 
-\
 Our data should be relatively clean now, and any further imputations can occur within the respective models that we fit.
 
 ## Exploratory Analysis
 
 Depending on the model that we fit we may have to contend with things like skewness, multicollinearity, near zero variance, and centered and scaling.
 
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 trainCorr <- train2 %>% 
   select_if(is.numeric) %>%  
   na.omit() %>% 
@@ -107,15 +121,29 @@ highcorrvars <- findCorrelation(
   cutoff = 0.7, names = TRUE) %>% as.data.frame()
 
 SPCorrVars <- trainCorr %>% as.data.frame() %>%  select(SalePrice) %>% filter(abs(SalePrice) > 0.6) %>% rownames() %>% as.data.frame() %>% filter(. != 'SalePrice')
+```
 
+Variables Highly Correlated with each other:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Variables Highly Correlated with each other:
 highcorrvars
+```
+
+Variables Highly Correlated with Sale Price:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Variables Highly Correlated with Sale Price:
 SPCorrVars
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 trainCorr %>% corrplot(order = 'original', type = 'lower', tl.srt = 45, tl.cex = 0.7)
 ```
 
-A few variables have relatively high correlation, but for the most most part the variables are pretty independent.
+A few variables have relatively high correlation, but for the most most part the variables are pretty independent.  
 
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 charPlots <- lapply(colnames(select_if(train2, is.character)),
        function(col) {
         ggplot(select_if(train2, is.character),
@@ -126,19 +154,25 @@ charPlots <- lapply(colnames(select_if(train2, is.character)),
 
 charPlots[[1]] + charPlots[[2]] + charPlots[[3]] + charPlots[[4]] + charPlots[[5]] + charPlots[[6]] +
 charPlots[[7]] + charPlots[[8]] + charPlots[[9]] + charPlots[[10]] + charPlots[[11]] + charPlots[[12]]
-charPlots[[13]] + charPlots[[14]] + charPlots[[15]] + charPlots[[16]] + charPlots[[17]] + charPlots[[18]]
+charPlots[[13]] + charPlots[[14]] + charPlots[[15]] + charPlots[[16]] + charPlots[[17]] + charPlots[[18]] +
 charPlots[[19]] + charPlots[[20]] + charPlots[[21]] + charPlots[[22]] + charPlots[[23]] + charPlots[[24]]
-charPlots[[25]] + charPlots[[26]] + charPlots[[27]] + charPlots[[28]] + charPlots[[29]] + charPlots[[30]]
+charPlots[[25]] + charPlots[[26]] + charPlots[[27]] + charPlots[[28]] + charPlots[[29]] + charPlots[[30]] +
 charPlots[[31]] + charPlots[[32]] + charPlots[[33]] + charPlots[[34]] + charPlots[[35]] + charPlots[[36]]
-charPlots[[37]] + charPlots[[38]] + charPlots[[39]] + charPlots[[40]] + charPlots[[41]] + charPlots[[42]]
+charPlots[[37]] + charPlots[[38]] + charPlots[[39]] + charPlots[[40]] + charPlots[[41]] + charPlots[[42]] +
 charPlots[[43]] + charPlots[[44]]
 
+```
+\
+Near Zero Variance Variables:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#Near Zero Variance Variables
 names(train2[nearZeroVar(train2)]) %>% as.data.frame()
 ```
 
 We definitely have some variables with Near Zero Variance, so models sensitive to these sorts of variables should have that included in their pre-processing.
 
-```{r, warning=FALSE}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 numPlots <- lapply(colnames(select_if(train2, is.numeric)),
        function(col) {
         ggplot(select_if(train2, is.numeric),
@@ -172,7 +206,7 @@ Each of these methods was selected to complement the others, covering a range of
 
 We will start with OLS, so we will need to create dummy variables to be able to fit the model. Then we will split the train set into a training and test set, since the provided test set does not have values for the response variable.
 
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 SalesPrice <- train2[which(colnames(train2) == 'SalePrice')][[1]]
 train2 <- train2[-which(colnames(train2) == 'SalePrice')]
 
@@ -190,14 +224,14 @@ SalesPriceTrain <- SalesPrice[isTrain]
 SalesPriceTest <- SalesPrice[-isTrain]
 ```
 
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 set.seed(100)
 indx <- createFolds(SalesPriceTrain, returnTrain = TRUE)
 ctrl <- trainControl(method = 'repeatedcv',
                      repeats = 10)
 ```
 
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 set.seed(100)
 ols1 <- train(x = train4, y = SalesPriceTrain,
               #na.Remove = TRUE,
@@ -211,14 +245,19 @@ testpreds = data.frame(
   obs = SalesPriceTest,
   ols = predict(ols1, test4)
 )
+```
+\
+Test Set Performance:
 
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Test Set Performance:
 postResample(testpreds$ols,testpreds$obs)
 ```
 
 Training performance for the OLS model is quite good, but it does not hold up as well against the test set. Still, this sets a baseline for other models to beat.\
 Next we will fit a Random Forest model. Since Random Forest model is able to handle qualitative predictors, we can use the non-dummy variables this time. This will hopefully reduce some of the predictor noise since there will be fewer models with which to predict.
 
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 train3 <- train3 %>% as.data.frame()
 preprocd <- preProcess(train3, method = c('knnImpute'))
 train3PP <- predict(preprocd, train3)
@@ -226,7 +265,7 @@ train5 <- train3PP[isTrain,] %>% as.data.frame()
 test5 <- train3PP[-isTrain,] %>% as.data.frame()
 ```
 
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 set.seed(100)
 mtryGrid <- data.frame(mtry = floor(seq(10,ncol(train5), length = 10)))
 
@@ -243,37 +282,46 @@ plot(rf1)
 plot(rfImp, top = 25)
 
 testpreds$RF <-  predict(rf1, test5)
+```
+\
+Test Set Performance:
 
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Test Set Performance:
 postResample(testpreds$RF,testpreds$obs)
 ```
+
 
 The Random Forest model looks good, but the performance against the test data suggests there is room for improvement. The Random Forest model does provide us with variable importance, however, and the chart above summarizes these results. We can use these variable importances in our next model, along with the correlation matrix observed earlier to see if we can identify just a few variables of interest. We will then fit an SVM model with a radial basis function using our chosen variables.
 
 The variables that seem reasonable to use moving forward are: OverallQual, GrLivArea, TotalBsmtSF, GarageCars, and FullBath. They don't appear to have issues with missing values, they appeared highly correlated to Sales Price, and there is only slight skewness (which will be addressed) among a few of them.
 
-Variance among these 5 chosen variables was not yet run. Prior to proceeding, It's crucial to check for zero variance in variables before incorporating them into a model because such variables provide no information that can help distinguish between observations in different categories or predict an outcome. Including them can waste computational resources and potentially introduce noise into the model, compromising its accuracy.
+Variance among these 5 chosen variables was not yet run. Prior to proceeding, It's crucial to check for zero variance in variables before incorporating them into a model because such variables provide no information that can help distinguish between observations in different categories or predict an outcome. Including them can waste computational resources and potentially introduce noise into the model, compromising its accuracy.  
 
-```{r}
+Variance of chosen variables:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 chosen_variables <- c("OverallQual", "GrLivArea", "TotalBsmtSF", "GarageCars", "FullBath")
 
 variances <- sapply(train2[chosen_variables], var, na.rm = TRUE)
 
+#Variance of chosen variables:
 print(variances)
 ```
 
 The analysis highlights the significance of various predictors in determining housing prices, with no zero variance found among the variables, ensuring their variability contributes meaningfully to the model. 'GrLivArea' and 'TotalBsmtSF' are the most influential, indicating that larger living areas and basements significantly impact house prices. 'OverallQual' is also critical, suggesting that homes of higher quality command higher prices. While 'GarageCars' and 'FullBath' have smaller impacts, the number of cars a garage holds and the number of full bathrooms still positively influence the price, albeit to a lesser degree.
 
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 skim(train2[chosen_variables])
 ```
 
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 summary(trainRaw %>% select(all_of(chosen_variables)))
 ```
 
 It is also essential to address the skewness observed in the 'GrLivArea' and 'TotalBsmtSF' variables. To rectify this, a Box-Cox transformation will be applied to normalize the distributions. Additionally, any missing values in the data will be replaced with the median value to maintain data integrity and ensure robust model performance.
 
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 box_cox_transform <- function(x) {
   x[is.na(x)] <- median(x, na.rm = TRUE)
   x <- x + 1e-6
@@ -294,7 +342,7 @@ train_trans <- trainRaw %>%
 
 Here are the transformed datasets, finalized and ready for further analysis.
 
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 train_final <- train_trans %>%
   select(SalePrice, OverallQual, GarageCars, FullBath, GrLivArea_BoxCox, TotalBsmtSF_BoxCox)
 
@@ -303,7 +351,7 @@ head(train_final)
 
 Next, we implemented a Support Vector Machine (SVM) model to predict housing prices, recognizing the importance of centering and scaling the data to normalize the feature scales and improve model accuracy. This method was selected due to the uncertain complexity and potential non-linearity of the relationships between the features and the target variable. Properly preparing the data ensures more reliable training outcomes, which is crucial for effectively capturing the underlying patterns and relationships
 
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 set.seed(100)
 
 x=cbind(predictors, train_final$SalePrice)
@@ -312,18 +360,18 @@ train_data <- train_final[inTrain, ]
 test_data <- train_final[-inTrain, ]
 ```
 
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 preProcValues <- preProcess(train_data[, -1], method = c("center", "scale"))
 train_data_preprocessed <- predict(preProcValues, train_data[, -1])
 test_data_preprocessed <- predict(preProcValues, test_data[, -1])
 ```
 
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 train_data_preprocessed$SalePrice <- train_data$SalePrice
 test_data_preprocessed$SalePrice <- test_data$SalePrice
 ```
 
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 set.seed(1056)  
 svmFit <- train(SalePrice ~ ., 
                    data = train_data_preprocessed,
@@ -339,10 +387,14 @@ print(svmFit)
 testpreds$SVMr <-  predict(svmFit, test_data_preprocessed)
 ```
 
-```{r}
+Test Set Performance:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 svm_prediction <- predict(svmFit, newdata = test_data_preprocessed)
 
 svm_performance <- postResample(pred = svm_prediction, obs = test_data_preprocessed$SalePrice)
+
+# Test Set Performance:
 print(svm_performance)
 ```
 
@@ -350,13 +402,16 @@ Interpretation of Performance Results for the SVM model:
 
 -   The R² value of 0.8412 shows our SVM model explains a substantial portion of the variance in house prices.
 
--   The RMSE and MAE values suggest that the model's predictions are reasonably close to the actual values but still have room for improvement. The typical prediction error is in the range of \$20,000 to \$30,000.We could use some additional model tuning or add additional features to improve the prediction accuracy (such as experimenting with some additional hyper parameter tuning)
+-   The RMSE and MAE values suggest that the model's predictions are reasonably close to the actual values but still have room for improvement. The typical prediction error is in the range of \$20,000 to \$30,000.We could use some additional model tuning or add additional features to improve the prediction accuracy (such as experimenting with some additional hyper parameter tuning)  
 
-```{r}
+Comparing Test Set performances:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 testPerfs2 <- rbind(OLS = postResample(testpreds$ols, testpreds$obs),
                    RF = postResample(testpreds$RF, testpreds$obs),
                    SVMr = postResample(testpreds$SVMr, testpreds$obs))
 
+# Comparing Test Set performances:
 testPerfs2
 ```
 
@@ -366,7 +421,7 @@ The SVMr model provided the highest predictive accuracy with an R2R^2R2 value of
 
 The RF model also outperforms the OLS model, with a higher R2R^2R2 value and lower errors, underscoring the effectiveness of more complex algorithms over linear approaches for this dataset
 
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 # SVM model plot
 svm_plot <- ggplot(data = testpreds, aes(x = obs, y = SVMr)) +
   geom_point(color = "blue", alpha = 0.6) +
